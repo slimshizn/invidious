@@ -42,11 +42,6 @@ module Invidious::Routes::Account
     sid = sid.as(String)
     token = env.params.body["csrf_token"]?
 
-    # We don't store passwords for Google accounts
-    if !user.password
-      return error_template(400, "Cannot change password for Google accounts")
-    end
-
     begin
       validate_request(token, sid, env.request, HMAC_KEY, locale)
     rescue ex
@@ -54,11 +49,11 @@ module Invidious::Routes::Account
     end
 
     password = env.params.body["password"]?
-    if !password
+    if password.nil? || password.empty?
       return error_template(401, "Password is a required field")
     end
 
-    new_passwords = env.params.body.select { |k, v| k.match(/^new_password\[\d+\]$/) }.map { |k, v| v }
+    new_passwords = env.params.body.select { |k, _| k.match(/^new_password\[\d+\]$/) }.map { |_, v| v }
 
     if new_passwords.size <= 1 || new_passwords.uniq.size != 1
       return error_template(400, "New passwords must match")
@@ -203,7 +198,7 @@ module Invidious::Routes::Account
     referer = get_referer(env)
 
     if !user
-      return env.redirect referer
+      return env.redirect "/login?referer=#{URI.encode_path_segment(env.request.resource)}"
     end
 
     user = user.as(User)
@@ -245,7 +240,7 @@ module Invidious::Routes::Account
       return error_template(400, ex)
     end
 
-    scopes = env.params.body.select { |k, v| k.match(/^scopes\[\d+\]$/) }.map { |k, v| v }
+    scopes = env.params.body.select { |k, _| k.match(/^scopes\[\d+\]$/) }.map { |_, v| v }
     callback_url = env.params.body["callbackUrl"]?
     expire = env.params.body["expire"]?.try &.to_i?
 
@@ -262,6 +257,7 @@ module Invidious::Routes::Account
       end
 
       query["token"] = access_token
+      query["username"] = URI.encode_path_segment(user.email)
       url.query = query.to_s
 
       env.redirect url.to_s
@@ -332,17 +328,9 @@ module Invidious::Routes::Account
       end
     end
 
-    if env.params.query["action_revoke_token"]?
-      action = "action_revoke_token"
-    else
-      return env.redirect referer
-    end
-
-    session = env.params.query["session"]?
-    session ||= ""
-
-    case action
-    when .starts_with? "action_revoke_token"
+    case action = env.params.query["action"]?
+    when "revoke_token"
+      session = env.params.query["session"]
       Invidious::Database::SessionIDs.delete(sid: session, email: user.email)
     else
       return error_json(400, "Unsupported action #{action}")

@@ -2,11 +2,16 @@
 
 module Invidious::Routes::Embed
   def self.redirect(env)
+    locale = env.get("preferences").as(Preferences).locale
     if plid = env.params.query["list"]?.try &.gsub(/[^a-zA-Z0-9_-]/, "")
       begin
         playlist = get_playlist(plid)
         offset = env.params.query["index"]?.try &.to_i? || 0
         videos = get_playlist_videos(playlist, offset: offset)
+        if videos.empty?
+          url = "/playlist?list=#{plid}"
+          raise NotFoundException.new(translate(locale, "error_video_not_in_playlist", url))
+        end
       rescue ex : NotFoundException
         return error_template(404, ex)
       rescue ex
@@ -26,6 +31,7 @@ module Invidious::Routes::Embed
   end
 
   def self.show(env)
+    locale = env.get("preferences").as(Preferences).locale
     id = env.params.url["id"]
 
     plid = env.params.query["list"]?.try &.gsub(/[^a-zA-Z0-9_-]/, "")
@@ -62,6 +68,10 @@ module Invidious::Routes::Embed
           playlist = get_playlist(plid)
           offset = env.params.query["index"]?.try &.to_i? || 0
           videos = get_playlist_videos(playlist, offset: offset)
+          if videos.empty?
+            url = "/playlist?list=#{plid}"
+            raise NotFoundException.new(translate(locale, "error_video_not_in_playlist", url))
+          end
         rescue ex : NotFoundException
           return error_template(404, ex)
         rescue ex
@@ -121,8 +131,6 @@ module Invidious::Routes::Embed
 
     begin
       video = get_video(id, region: params.region)
-    rescue ex : VideoRedirect
-      return env.redirect env.request.resource.gsub(id, ex.video_id)
     rescue ex : NotFoundException
       return error_template(404, ex)
     rescue ex
@@ -139,7 +147,7 @@ module Invidious::Routes::Embed
     #   PG_DB.exec("UPDATE users SET watched = array_append(watched, $1) WHERE email = $2", id, user.as(User).email)
     # end
 
-    if notifications && notifications.includes? id
+    if CONFIG.enable_user_notifications && notifications && notifications.includes? id
       Invidious::Database::Users.remove_notification(user.as(User), id)
       env.get("user").as(User).notifications.delete(id)
       notifications.delete(id)
@@ -149,9 +157,11 @@ module Invidious::Routes::Embed
     adaptive_fmts = video.adaptive_fmts
 
     if params.local
-      fmt_stream.each { |fmt| fmt["url"] = JSON::Any.new(URI.parse(fmt["url"].as_s).request_target) }
-      adaptive_fmts.each { |fmt| fmt["url"] = JSON::Any.new(URI.parse(fmt["url"].as_s).request_target) }
+      fmt_stream.each { |fmt| fmt["url"] = JSON::Any.new(HttpServer::Utils.proxy_video_url(fmt["url"].as_s)) }
     end
+
+    # Always proxy DASH streams, otherwise youtube CORS headers will prevent playback
+    adaptive_fmts.each { |fmt| fmt["url"] = JSON::Any.new(HttpServer::Utils.proxy_video_url(fmt["url"].as_s)) }
 
     video_streams = video.video_streams
     audio_streams = video.audio_streams

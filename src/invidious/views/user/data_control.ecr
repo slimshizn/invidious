@@ -8,17 +8,27 @@
             <legend><%= translate(locale, "Import") %></legend>
 
             <div class="pure-control-group">
-                <label for="import_youtube"><%= translate(locale, "Import Invidious data") %></label>
+                <label for="import_invidious"><%= translate(locale, "Import Invidious data") %></label>
                 <input type="file" id="import_invidious" name="import_invidious">
             </div>
 
             <div class="pure-control-group">
                 <label for="import_youtube">
-                    <a rel="noopener" target="_blank" href="https://github.com/iv-org/documentation/blob/master/Export-YouTube-subscriptions.md">
+                    <a rel="noopener" target="_blank" href="https://github.com/iv-org/documentation/blob/master/docs/export-youtube-subscriptions.md">
                         <%= translate(locale, "Import YouTube subscriptions") %>
                     </a>
                 </label>
                 <input type="file" id="import_youtube" name="import_youtube">
+            </div>
+
+            <div class="pure-control-group">
+                <label for="import_youtube_pl"><%= translate(locale, "Import YouTube playlist (.csv)") %></label>
+                <input type="file" id="import_youtube_pl" name="import_youtube_pl">
+            </div>
+
+            <div class="pure-control-group">
+                <label for="import_youtube_wh"><%= translate(locale, "Import YouTube watch history (.json)") %></label>
+                <input type="file" id="import_youtube_wh" name="import_youtube_wh">
             </div>
 
             <div class="pure-control-group">

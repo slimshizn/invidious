@@ -14,8 +14,6 @@ module Invidious::Routes::API::Manifest
 
     begin
       video = get_video(id, region: region)
-    rescue ex : VideoRedirect
-      return env.redirect env.request.resource.gsub(id, ex.video_id)
     rescue ex : NotFoundException
       haltf env, status_code: 404
     rescue ex
@@ -23,28 +21,27 @@ module Invidious::Routes::API::Manifest
     end
 
     if dashmpd = video.dash_manifest_url
-      manifest = YT_POOL.client &.get(URI.parse(dashmpd).request_target).body
+      response = YT_POOL.client &.get(URI.parse(dashmpd).request_target)
 
-      manifest = manifest.gsub(/<BaseURL>[^<]+<\/BaseURL>/) do |baseurl|
-        url = baseurl.lchop("<BaseURL>")
-        url = url.rchop("</BaseURL>")
+      if response.status_code != 200
+        haltf env, status_code: response.status_code
+      end
 
-        if local
-          uri = URI.parse(url)
-          url = "#{uri.request_target}host/#{uri.host}/"
-        end
-
+      # Proxy URLs for video playback on invidious.
+      # Other API clients can get the original URLs by omiting `local=true`.
+      manifest = response.body.gsub(/<BaseURL>[^<]+<\/BaseURL>/) do |baseurl|
+        url = baseurl.lchop("<BaseURL>").rchop("</BaseURL>")
+        url = HttpServer::Utils.proxy_video_url(url, absolute: true) if local
         "<BaseURL>#{url}</BaseURL>"
       end
 
       return manifest
     end
 
-    adaptive_fmts = video.adaptive_fmts
-
+    # Ditto, only proxify URLs if `local=true` is used
     if local
-      adaptive_fmts.each do |fmt|
-        fmt["url"] = JSON::Any.new(URI.parse(fmt["url"].as_s).request_target)
+      video.adaptive_fmts.each do |fmt|
+        fmt["url"] = JSON::Any.new(HttpServer::Utils.proxy_video_url(fmt["url"].as_s, absolute: true))
       end
     end
 
@@ -66,17 +63,23 @@ module Invidious::Routes::API::Manifest
               # OTF streams aren't supported yet (See https://github.com/TeamNewPipe/NewPipe/issues/2415)
               next if !(fmt.has_key?("indexRange") && fmt.has_key?("initRange"))
 
+              audio_track = fmt["audioTrack"]?.try &.as_h? || {} of String => JSON::Any
+              lang = audio_track["id"]?.try &.as_s.split('.')[0] || "und"
+              is_default = audio_track.has_key?("audioIsDefault") ? audio_track["audioIsDefault"].as_bool : i == 0
+              displayname = audio_track["displayName"]?.try &.as_s || "Unknown"
+              bitrate = fmt["bitrate"]
+
               # Different representations of the same audio should be groupped into one AdaptationSet.
               # However, most players don't support auto quality switching, so we have to trick them
               # into providing a quality selector.
               # See https://github.com/iv-org/invidious/issues/3074 for more details.
-              xml.element("AdaptationSet", id: i, mimeType: mime_type, startWithSAP: 1, subsegmentAlignment: true, label: fmt["bitrate"].to_s + "k") do
+              xml.element("AdaptationSet", id: i, mimeType: mime_type, startWithSAP: 1, subsegmentAlignment: true, label: "#{displayname} [#{bitrate}k]", lang: lang) do
                 codecs = fmt["mimeType"].as_s.split("codecs=")[1].strip('"')
                 bandwidth = fmt["bitrate"].as_i
                 itag = fmt["itag"].as_i
                 url = fmt["url"].as_s
 
-                xml.element("Role", schemeIdUri: "urn:mpeg:dash:role:2011", value: i == 0 ? "main" : "alternate")
+                xml.element("Role", schemeIdUri: "urn:mpeg:dash:role:2011", value: is_default ? "main" : "alternate")
 
                 xml.element("Representation", id: fmt["itag"], codecs: codecs, bandwidth: bandwidth) do
                   xml.element("AudioChannelConfiguration", schemeIdUri: "urn:mpeg:dash:23003:3:audio_channel_configuration:2011",
@@ -173,8 +176,9 @@ module Invidious::Routes::API::Manifest
     manifest = response.body
 
     if local
-      manifest = manifest.gsub(/^https:\/\/\w+---.{11}\.c\.youtube\.com[^\n]*/m) do |match|
-        path = URI.parse(match).path
+      manifest = manifest.gsub(/https:\/\/[^\n"]*/m) do |match|
+        uri = URI.parse(match)
+        path = uri.path
 
         path = path.lchop("/videoplayback/")
         path = path.rchop("/")
@@ -203,7 +207,7 @@ module Invidious::Routes::API::Manifest
           raw_params["fvip"] = fvip["fvip"]
         end
 
-        raw_params["local"] = "true"
+        raw_params["host"] = uri.host.not_nil!
 
         "#{HOST_URL}/videoplayback?#{raw_params}"
       end

@@ -1,9 +1,22 @@
-# "bn_BD"   => load_locale("bn_BD"),   # Bengali (Bangladesh)  [Incomplete]
-# "eu"      => load_locale("eu"),      # Basque  [Incomplete]
-# "sk"      => load_locale("sk"),      # Slovak  [Incomplete]
+# Languages requiring a better level of translation (at least 20%)
+# to be added to the list below:
+#
+#  "af"      => "", # Afrikaans
+#  "az"      => "", # Azerbaijani
+#  "be"      => "", # Belarusian
+#  "bn_BD"   => "", # Bengali (Bangladesh)
+#  "ia"      => "", # Interlingua
+#  "or"      => "", # Odia
+#  "tk"      => "", # Turkmen
+#  "tok      => "", # Toki Pona
+#
 LOCALES_LIST = {
   "ar"      => "العربية",               # Arabic
+  "bg"      => "български",             # Bulgarian
+  "bn"      => "বাংলা",                 # Bengali
+  "ca"      => "Català",                # Catalan
   "cs"      => "Čeština",               # Czech
+  "cy"      => "Cymraeg",               # Welsh
   "da"      => "Dansk",                 # Danish
   "de"      => "Deutsch",               # German
   "el"      => "Ελληνικά",              # Greek
@@ -11,6 +24,7 @@ LOCALES_LIST = {
   "eo"      => "Esperanto",             # Esperanto
   "es"      => "Español",               # Spanish
   "et"      => "Eesti keel",            # Estonian
+  "eu"      => "Euskara",               # Basque
   "fa"      => "فارسی",                 # Persian
   "fi"      => "Suomi",                 # Finnish
   "fr"      => "Français",              # French
@@ -23,6 +37,7 @@ LOCALES_LIST = {
   "it"      => "Italiano",              # Italian
   "ja"      => "日本語",                   # Japanese
   "ko"      => "한국어",                   # Korean
+  "lmo"     => "Lombard",               # Lombard
   "lt"      => "Lietuvių",              # Lithuanian
   "nb-NO"   => "Norsk bokmål",          # Norwegian Bokmål
   "nl"      => "Nederlands",            # Dutch
@@ -32,6 +47,8 @@ LOCALES_LIST = {
   "pt-PT"   => "Português de Portugal", # Portuguese (Portugal)
   "ro"      => "Română",                # Romanian
   "ru"      => "Русский",               # Russian
+  "si"      => "සිංහල",                 # Sinhala
+  "sk"      => "Slovenčina",            # Slovak
   "sl"      => "Slovenščina",           # Slovenian
   "sq"      => "Shqip",                 # Albanian
   "sr"      => "Srpski (latinica)",     # Serbian (Latin)
@@ -76,7 +93,7 @@ def load_all_locales
   return locales
 end
 
-def translate(locale : String?, key : String, text : String | Nil = nil) : String
+def translate(locale : String?, key : String, text : String | Hash(String, String) | Nil = nil) : String
   # Log a warning if "key" doesn't exist in en-US locale and return
   # that key as the text, so this is more or less transparent to the user.
   if !LOCALES["en-US"].has_key?(key)
@@ -99,10 +116,12 @@ def translate(locale : String?, key : String, text : String | Nil = nil) : Strin
     match_length = 0
 
     raw_data.as_h.each do |hash_key, value|
-      if md = text.try &.match(/#{hash_key}/)
-        if md[0].size >= match_length
-          translation = value.as_s
-          match_length = md[0].size
+      if text.is_a?(String)
+        if md = text.try &.match(/#{hash_key}/)
+          if md[0].size >= match_length
+            translation = value.as_s
+            match_length = md[0].size
+          end
         end
       end
     end
@@ -112,8 +131,13 @@ def translate(locale : String?, key : String, text : String | Nil = nil) : Strin
     raise "Invalid translation \"#{raw_data}\""
   end
 
-  if text
+  if text.is_a?(String)
     translation = translation.gsub("`x`", text)
+  elsif text.is_a?(Hash(String, String))
+    # adds support for multi string interpolation. Based on i18next https://www.i18next.com/translation-function/interpolation#basic
+    text.each_key do |hash_key|
+      translation = translation.gsub("{{#{hash_key}}}", text[hash_key])
+    end
   end
 
   return translation
@@ -162,4 +186,13 @@ def translate_bool(locale : String?, translation : Bool)
   when false
     return translate(locale, "No")
   end
+end
+
+def locale_is_rtl?(locale : String?)
+  # Fallback to en-US
+  return false if locale.nil?
+
+  # Arabic, Persian, Hebrew
+  # See https://en.wikipedia.org/wiki/Right-to-left_script#List_of_RTL_scripts
+  return {"ar", "fa", "he"}.includes? locale
 end

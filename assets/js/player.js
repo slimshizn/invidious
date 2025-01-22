@@ -3,7 +3,6 @@ var player_data = JSON.parse(document.getElementById('player_data').textContent)
 var video_data = JSON.parse(document.getElementById('video_data').textContent);
 
 var options = {
-    preload: 'auto',
     liveui: true,
     playbackRates: [0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0],
     controlBar: {
@@ -98,11 +97,13 @@ if (video_data.params.quality === 'dash') {
 
 /**
  * Function for add time argument to url
+ *
  * @param {String} url
+ * @param {String} [base]
  * @returns {URL} urlWithTimeArg
  */
-function addCurrentTimeToURL(url) {
-    var urlUsed = new URL(url);
+function addCurrentTimeToURL(url, base) {
+    var urlUsed = new URL(url, base);
     urlUsed.searchParams.delete('start');
     var currentTime = Math.ceil(player.currentTime());
     if (currentTime > 0)
@@ -111,6 +112,50 @@ function addCurrentTimeToURL(url) {
         urlUsed.searchParams.delete('t');
     return urlUsed;
 }
+
+/**
+ * Global variable to save the last timestamp (in full seconds) at which the external
+ * links were updated by the 'timeupdate' callback below.
+ *
+ * It is initialized to 5s so that the video will always restart from the beginning
+ * if the user hasn't really started watching before switching to the other website.
+ */
+var timeupdate_last_ts = 5;
+
+/**
+ * Callback that updates the timestamp on all external links
+ */
+player.on('timeupdate', function () {
+    // Only update once every second
+    let current_ts = Math.floor(player.currentTime());
+    if (current_ts > timeupdate_last_ts) timeupdate_last_ts = current_ts;
+    else return;
+
+    // YouTube links
+
+    let elem_yt_watch = document.getElementById('link-yt-watch');
+    let elem_yt_embed = document.getElementById('link-yt-embed');
+
+    let base_url_yt_watch = elem_yt_watch.getAttribute('data-base-url');
+    let base_url_yt_embed = elem_yt_embed.getAttribute('data-base-url');
+
+    elem_yt_watch.href = addCurrentTimeToURL(base_url_yt_watch);
+    elem_yt_embed.href = addCurrentTimeToURL(base_url_yt_embed);
+
+    // Invidious links
+
+    let domain = window.location.origin;
+
+    let elem_iv_embed = document.getElementById('link-iv-embed');
+    let elem_iv_other = document.getElementById('link-iv-other');
+
+    let base_url_iv_embed = elem_iv_embed.getAttribute('data-base-url');
+    let base_url_iv_other = elem_iv_other.getAttribute('data-base-url');
+
+    elem_iv_embed.href = addCurrentTimeToURL(base_url_iv_embed, domain);
+    elem_iv_other.href = addCurrentTimeToURL(base_url_iv_other, domain);
+});
+
 
 var shareOptions = {
     socials: ['fbFeed', 'tw', 'reddit', 'email'],
@@ -259,17 +304,19 @@ function updateCookie(newVolume, newSpeed) {
 
     // Set expiration in 2 year
     var date = new Date();
-    date.setTime(date.getTime() + 63115200);
+    date.setFullYear(date.getFullYear() + 2);
 
-    var ipRegex = /^((\d+\.){3}\d+|[A-Fa-f0-9]*:[A-Fa-f0-9:]*:[A-Fa-f0-9:]+)$/;
+    var ipRegex = /^((\d+\.){3}\d+|[\dA-Fa-f]*:[\d:A-Fa-f]*:[\d:A-Fa-f]+)$/;
     var domainUsed = location.hostname;
 
     // Fix for a bug in FF where the leading dot in the FQDN is not ignored
     if (domainUsed.charAt(0) !== '.' && !ipRegex.test(domainUsed) && domainUsed !== 'localhost')
         domainUsed = '.' + location.hostname;
 
-    document.cookie = 'PREFS=' + cookieData + '; SameSite=Strict; path=/; domain=' +
-        domainUsed + '; expires=' + date.toGMTString() + ';';
+    var secure = location.protocol.startsWith("https") ? " Secure;" : "";
+
+    document.cookie = 'PREFS=' + cookieData + '; SameSite=Lax; path=/; domain=' +
+        domainUsed + '; expires=' + date.toGMTString() + ';' + secure;
 
     video_data.params.volume = volumeValue;
     video_data.params.speed = speedValue;
@@ -303,7 +350,12 @@ if (video_data.params.save_player_pos) {
     const rememberedTime = get_video_time();
     let lastUpdated = 0;
 
-    if(!hasTimeParam) set_seconds_after_start(rememberedTime);
+    if(!hasTimeParam) {
+      if (rememberedTime >= video_data.length_seconds - 20)
+        set_seconds_after_start(0);
+      else
+        set_seconds_after_start(rememberedTime);
+    }
 
     player.on('timeupdate', function () {
         const raw = player.currentTime();
@@ -695,6 +747,17 @@ if (navigator.vendor === 'Apple Computer, Inc.' && video_data.params.listen) {
             if (player.remainingTime() < player.duration() / 2 && player.remainingTime() >= 2) {
                 player.currentTime(player.duration() - 1);
             }
+        });
+    });
+}
+
+// Safari screen timeout on looped video playback fix
+if (navigator.vendor === 'Apple Computer, Inc.' && !video_data.params.listen && video_data.params.video_loop) {
+    player.loop(false);
+    player.ready(function () {
+        player.on('ended', function () {
+            player.currentTime(0);
+            player.play();
         });
     });
 }

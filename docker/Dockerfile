@@ -1,4 +1,5 @@
-FROM crystallang/crystal:1.4.1-alpine AS builder
+FROM crystallang/crystal:1.12.2-alpine AS builder
+
 RUN apk add --no-cache sqlite-static yaml-static
 
 ARG release
@@ -7,8 +8,6 @@ WORKDIR /invidious
 COPY ./shard.yml ./shard.yml
 COPY ./shard.lock ./shard.lock
 RUN shards install --production
-
-COPY --from=quay.io/invidious/lsquic-compiled /root/liblsquic.a ./lib/lsquic/src/lsquic/ext/liblsquic.a
 
 COPY ./src/ ./src/
 # TODO: .git folder is required for building – this is destructive.
@@ -21,9 +20,8 @@ COPY ./assets/ ./assets/
 COPY ./videojs-dependencies.yml ./videojs-dependencies.yml
 
 RUN crystal spec --warnings all \
-    --link-flags "-lxml2 -llzma"
-
-RUN if [ "${release}" == 1 ] ; then \
+    --link-flags "-lxml2 -llzma"    
+RUN if [[ "${release}" == 1 ]] ; then \
         crystal build ./src/invidious.cr \
         --release \
         --static --warnings all \
@@ -34,9 +32,8 @@ RUN if [ "${release}" == 1 ] ; then \
         --link-flags "-lxml2 -llzma"; \
     fi
 
-
-FROM alpine:latest
-RUN apk add --no-cache librsvg ttf-opensans
+FROM alpine:3.20
+RUN apk add --no-cache rsvg-convert ttf-opensans tini tzdata
 WORKDIR /invidious
 RUN addgroup -g 1000 -S invidious && \
     adduser -u 1000 -S invidious -G invidious
@@ -51,4 +48,5 @@ RUN chmod o+rX -R ./assets ./config ./locales
 
 EXPOSE 3000
 USER invidious
+ENTRYPOINT ["/sbin/tini", "--"]
 CMD [ "/invidious/invidious" ]

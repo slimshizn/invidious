@@ -13,6 +13,11 @@
             </div>
 
             <div class="pure-control-group">
+                <label for="preload"><%= translate(locale, "preferences_preload_label") %></label>
+                <input name="preload" id="preload" type="checkbox" <% if preferences.preload %>checked<% end %>>
+            </div>
+
+            <div class="pure-control-group">
                 <label for="autoplay"><%= translate(locale, "preferences_autoplay_label") %></label>
                 <input name="autoplay" id="autoplay" type="checkbox" <% if preferences.autoplay %>checked<% end %>>
             </div>
@@ -89,7 +94,7 @@
                 <label for="captions[0]"><%= translate(locale, "preferences_captions_label") %></label>
                 <% preferences.captions.each_with_index do |caption, index| %>
                     <select class="pure-u-1-6" name="captions[<%= index %>]" id="captions[<%= index %>]">
-                        <% CAPTION_LANGUAGES.each do |option| %>
+                        <% Invidious::Videos::Captions::LANGUAGES.each do |option| %>
                             <option value="<%= option %>" <% if preferences.captions[index] == option %> selected <% end %>><%= translate(locale, option.blank? ? "none" : option) %></option>
                         <% end %>
                     </select>
@@ -244,6 +249,7 @@
                     <input name="unseen_only" id="unseen_only" type="checkbox" <% if preferences.unseen_only %>checked<% end %>>
                 </div>
 
+                <% if CONFIG.enable_user_notifications %>
                 <div class="pure-control-group">
                     <label for="notifications_only"><%= translate(locale, "preferences_notifications_only_label") %></label>
                     <input name="notifications_only" id="notifications_only" type="checkbox" <% if preferences.notifications_only %>checked<% end %>>
@@ -254,6 +260,7 @@
                     <div class="pure-control-group">
                         <a href="#" data-onclick="notification_requestPermission"><%= translate(locale, "Enable web notifications") %></a>
                     </div>
+                <% end %>
                 <% end %>
             <% end %>
 
@@ -308,7 +315,7 @@
 
                 <div class="pure-control-group">
                     <label for="modified_source_code_url"><%= translate(locale, "adminprefs_modified_source_code_url_label") %></label>
-                    <input name="modified_source_code_url" id="modified_source_code_url" type="input" <% if CONFIG.modified_source_code_url %>checked<% end %>>
+                    <input name="modified_source_code_url" id="modified_source_code_url" type="url" value="<%= CONFIG.modified_source_code_url %>">
                 </div>
             <% end %>
 

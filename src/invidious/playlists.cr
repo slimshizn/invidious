@@ -46,8 +46,14 @@ struct PlaylistVideo
     XML.build { |xml| to_xml(xml) }
   end
 
+  def to_json(locale : String?, json : JSON::Builder)
+    to_json(json)
+  end
+
   def to_json(json : JSON::Builder, index : Int32? = nil)
     json.object do
+      json.field "type", "video"
+
       json.field "title", self.title
       json.field "videoId", self.id
 
@@ -56,7 +62,7 @@ struct PlaylistVideo
       json.field "authorUrl", "/channel/#{self.ucid}"
 
       json.field "videoThumbnails" do
-        generate_thumbnails(json, self.id)
+        Invidious::JSONify::APIv1.thumbnails(json, self.id)
       end
 
       if index
@@ -67,6 +73,7 @@ struct PlaylistVideo
       end
 
       json.field "lengthSeconds", self.length_seconds
+      json.field "liveNow", self.live_now
     end
   end
 
@@ -89,6 +96,7 @@ struct Playlist
   property views : Int64
   property updated : Time
   property thumbnail : String?
+  property subtitle : String?
 
   def to_json(offset, json : JSON::Builder, video_id : String? = nil)
     json.object do
@@ -100,6 +108,7 @@ struct Playlist
       json.field "author", self.author
       json.field "authorId", self.ucid
       json.field "authorUrl", "/channel/#{self.ucid}"
+      json.field "subtitle", self.subtitle
 
       json.field "authorThumbnails" do
         json.array do
@@ -261,7 +270,7 @@ end
 
 def subscribe_playlist(user, playlist)
   playlist = InvidiousPlaylist.new({
-    title:       playlist.title.byte_slice(0, 150),
+    title:       playlist.title[..150],
     id:          playlist.id,
     author:      user.email,
     description: "", # Max 5000 characters
@@ -356,11 +365,15 @@ def fetch_playlist(plid : String)
   updated = Time.utc
   video_count = 0
 
+  subtitle = extract_text(initial_data.dig?("header", "playlistHeaderRenderer", "subtitle"))
+
   playlist_info["stats"]?.try &.as_a.each do |stat|
     text = stat["runs"]?.try &.as_a.map(&.["text"].as_s).join("") || stat["simpleText"]?.try &.as_s
     next if !text
 
     if text.includes? "video"
+      video_count = text.gsub(/\D/, "").to_i? || 0
+    elsif text.includes? "episode"
       video_count = text.gsub(/\D/, "").to_i? || 0
     elsif text.includes? "view"
       views = text.gsub(/\D/, "").to_i64? || 0_i64
@@ -397,6 +410,7 @@ def fetch_playlist(plid : String)
     views:            views,
     updated:          updated,
     thumbnail:        thumbnail,
+    subtitle:         subtitle,
   })
 end
 
@@ -491,7 +505,7 @@ def extract_playlist_videos(initial_data : Hash(String, JSON::Any))
   return videos
 end
 
-def template_playlist(playlist)
+def template_playlist(playlist, listen)
   html = <<-END_HTML
   <h3>
     <a href="/playlist?list=#{playlist["playlistId"]}">
@@ -505,9 +519,9 @@ def template_playlist(playlist)
   playlist["videos"].as_a.each do |video|
     html += <<-END_HTML
       <li class="pure-menu-item" id="#{video["videoId"]}">
-        <a href="/watch?v=#{video["videoId"]}&list=#{playlist["playlistId"]}&index=#{video["index"]}">
+        <a href="/watch?v=#{video["videoId"]}&list=#{playlist["playlistId"]}&index=#{video["index"]}#{listen ? "&listen=1" : ""}">
           <div class="thumbnail">
-              <img loading="lazy" class="thumbnail" src="/vi/#{video["videoId"]}/mqdefault.jpg">
+              <img loading="lazy" class="thumbnail" src="/vi/#{video["videoId"]}/mqdefault.jpg" alt="" />
               <p class="length">#{recode_length_seconds(video["lengthSeconds"].as_i)}</p>
           </div>
           <p style="width:100%">#{video["title"]}</p>

@@ -83,10 +83,6 @@ module Invidious::Routes::Feeds
     headers = HTTP::Headers.new
     headers["Cookie"] = env.request.headers["Cookie"]
 
-    if !user.password
-      user, sid = get_user(sid, headers)
-    end
-
     max_results = env.params.query["max_results"]?.try &.to_i?.try &.clamp(0, MAX_ITEMS_PER_PAGE)
     max_results ||= user.preferences.max_results
     max_results ||= CONFIG.default_user_preferences.max_results
@@ -96,13 +92,19 @@ module Invidious::Routes::Feeds
 
     videos, notifications = get_subscription_feed(user, max_results, page)
 
-    # "updated" here is used for delivering new notifications, so if
-    # we know a user has looked at their feed e.g. in the past 10 minutes,
-    # they've already seen a video posted 20 minutes ago, and don't need
-    # to be notified.
-    Invidious::Database::Users.clear_notifications(user)
-    user.notifications = [] of String
+    if CONFIG.enable_user_notifications
+      # "updated" here is used for delivering new notifications, so if
+      # we know a user has looked at their feed e.g. in the past 10 minutes,
+      # they've already seen a video posted 20 minutes ago, and don't need
+      # to be notified.
+      Invidious::Database::Users.clear_notifications(user)
+      user.notifications = [] of String
+    end
     env.set "user", user
+
+    # Used for pagination links
+    base_url = "/feed/subscriptions"
+    base_url += "?max_results=#{max_results}" if env.params.query.has_key?("max_results")
 
     templated "feeds/subscriptions"
   end
@@ -131,6 +133,10 @@ module Invidious::Routes::Feeds
     end
     watched ||= [] of String
 
+    # Used for pagination links
+    base_url = "/feed/history"
+    base_url += "?max_results=#{max_results}" if env.params.query.has_key?("max_results")
+
     templated "feeds/history"
   end
 
@@ -156,20 +162,26 @@ module Invidious::Routes::Feeds
       return error_atom(500, ex)
     end
 
+    namespaces = {
+      "yt"      => "http://www.youtube.com/xml/schemas/2015",
+      "media"   => "http://search.yahoo.com/mrss/",
+      "default" => "http://www.w3.org/2005/Atom",
+    }
+
     response = YT_POOL.client &.get("/feeds/videos.xml?channel_id=#{channel.ucid}")
-    rss = XML.parse_html(response.body)
+    rss = XML.parse(response.body)
 
-    videos = rss.xpath_nodes("//feed/entry").map do |entry|
-      video_id = entry.xpath_node("videoid").not_nil!.content
-      title = entry.xpath_node("title").not_nil!.content
+    videos = rss.xpath_nodes("//default:feed/default:entry", namespaces).map do |entry|
+      video_id = entry.xpath_node("yt:videoId", namespaces).not_nil!.content
+      title = entry.xpath_node("default:title", namespaces).not_nil!.content
 
-      published = Time.parse_rfc3339(entry.xpath_node("published").not_nil!.content)
-      updated = Time.parse_rfc3339(entry.xpath_node("updated").not_nil!.content)
+      published = Time.parse_rfc3339(entry.xpath_node("default:published", namespaces).not_nil!.content)
+      updated = Time.parse_rfc3339(entry.xpath_node("default:updated", namespaces).not_nil!.content)
 
-      author = entry.xpath_node("author/name").not_nil!.content
-      ucid = entry.xpath_node("channelid").not_nil!.content
-      description_html = entry.xpath_node("group/description").not_nil!.to_s
-      views = entry.xpath_node("group/community/statistics").not_nil!.["views"].to_i64
+      author = entry.xpath_node("default:author/default:name", namespaces).not_nil!.content
+      ucid = entry.xpath_node("yt:channelId", namespaces).not_nil!.content
+      description_html = entry.xpath_node("media:group/media:description", namespaces).not_nil!.to_s
+      views = entry.xpath_node("media:group/media:community/media:statistics", namespaces).not_nil!.["views"].to_i64
 
       SearchVideo.new({
         title:              title,
@@ -180,11 +192,10 @@ module Invidious::Routes::Feeds
         views:              views,
         description_html:   description_html,
         length_seconds:     0,
-        live_now:           false,
-        paid:               false,
-        premium:            false,
         premiere_timestamp: nil,
         author_verified:    false,
+        author_thumbnail:   nil,
+        badges:             VideoBadges::None,
       })
     end
 
@@ -202,6 +213,12 @@ module Invidious::Routes::Feeds
         xml.element("author") do
           xml.element("name") { xml.text channel.author }
           xml.element("uri") { xml.text "#{HOST_URL}/channel/#{channel.ucid}" }
+        end
+
+        xml.element("image") do
+          xml.element("url") { xml.text channel.author_thumbnail }
+          xml.element("title") { xml.text channel.author }
+          xml.element("link", rel: "self", href: "#{HOST_URL}#{env.request.resource}")
         end
 
         videos.each do |video|
@@ -389,22 +406,33 @@ module Invidious::Routes::Feeds
     end
 
     spawn do
-      rss = XML.parse_html(body)
-      rss.xpath_nodes("//feed/entry").each do |entry|
-        id = entry.xpath_node("videoid").not_nil!.content
-        author = entry.xpath_node("author/name").not_nil!.content
-        published = Time.parse_rfc3339(entry.xpath_node("published").not_nil!.content)
-        updated = Time.parse_rfc3339(entry.xpath_node("updated").not_nil!.content)
+      # TODO: unify this with the other almost identical looking parts in this and channels.cr somehow?
+      namespaces = {
+        "yt"      => "http://www.youtube.com/xml/schemas/2015",
+        "default" => "http://www.w3.org/2005/Atom",
+      }
+      rss = XML.parse(body)
+      rss.xpath_nodes("//default:feed/default:entry", namespaces).each do |entry|
+        id = entry.xpath_node("yt:videoId", namespaces).not_nil!.content
+        author = entry.xpath_node("default:author/default:name", namespaces).not_nil!.content
+        published = Time.parse_rfc3339(entry.xpath_node("default:published", namespaces).not_nil!.content)
+        updated = Time.parse_rfc3339(entry.xpath_node("default:updated", namespaces).not_nil!.content)
 
-        video = get_video(id, force_refresh: true)
+        begin
+          video = get_video(id, force_refresh: true)
+        rescue
+          next # skip this video since it raised an exception (e.g. it is a scheduled live event)
+        end
 
-        # Deliver notifications to `/api/v1/auth/notifications`
-        payload = {
-          "topic"     => video.ucid,
-          "videoId"   => video.id,
-          "published" => published.to_unix,
-        }.to_json
-        PG_DB.exec("NOTIFY notifications, E'#{payload}'")
+        if CONFIG.enable_user_notifications
+          # Deliver notifications to `/api/v1/auth/notifications`
+          payload = {
+            "topic"     => video.ucid,
+            "videoId"   => video.id,
+            "published" => published.to_unix,
+          }.to_json
+          PG_DB.exec("NOTIFY notifications, E'#{payload}'")
+        end
 
         video = ChannelVideo.new({
           id:                 id,
@@ -420,7 +448,13 @@ module Invidious::Routes::Feeds
         })
 
         was_insert = Invidious::Database::ChannelVideos.insert(video, with_premiere_timestamp: true)
-        Invidious::Database::Users.add_notification(video) if was_insert
+        if was_insert
+          if CONFIG.enable_user_notifications
+            Invidious::Database::Users.add_notification(video)
+          else
+            Invidious::Database::Users.feed_needs_update(video)
+          end
+        end
       end
     end
 

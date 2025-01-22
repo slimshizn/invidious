@@ -3,7 +3,7 @@
 # -------------------
 
 macro error_template(*args)
-  error_template_helper(env, {{*args}})
+  error_template_helper(env, {{args.splat}})
 end
 
 def github_details(summary : String, content : String)
@@ -43,6 +43,8 @@ def error_template_helper(env : HTTP::Server::Context, status_code : Int32, exce
   # URLs for the error message below
   url_faq = "https://github.com/iv-org/documentation/blob/master/docs/faq.md"
   url_search_issues = "https://github.com/iv-org/invidious/issues"
+  url_search_issues += "?q=is:issue+is:open+"
+  url_search_issues += URI.encode_www_form("[Bug] #{issue_title}")
 
   url_switch = "https://redirect.invidious.io" + env.request.resource
 
@@ -95,7 +97,7 @@ end
 # -------------------
 
 macro error_atom(*args)
-  error_atom_helper(env, {{*args}})
+  error_atom_helper(env, {{args.splat}})
 end
 
 def error_atom_helper(env : HTTP::Server::Context, status_code : Int32, exception : Exception)
@@ -121,14 +123,14 @@ end
 # -------------------
 
 macro error_json(*args)
-  error_json_helper(env, {{*args}})
+  error_json_helper(env, {{args.splat}})
 end
 
 def error_json_helper(
   env : HTTP::Server::Context,
   status_code : Int32,
   exception : Exception,
-  additional_fields : Hash(String, Object) | Nil = nil
+  additional_fields : Hash(String, Object) | Nil = nil,
 )
   if exception.is_a?(InfoException)
     return error_json_helper(env, status_code, exception.message || "", additional_fields)
@@ -150,7 +152,7 @@ def error_json_helper(
   env : HTTP::Server::Context,
   status_code : Int32,
   message : String,
-  additional_fields : Hash(String, Object) | Nil = nil
+  additional_fields : Hash(String, Object) | Nil = nil,
 )
   env.response.content_type = "application/json"
   env.response.status_code = status_code
@@ -190,7 +192,7 @@ def error_redirect_helper(env : HTTP::Server::Context)
           <a href="/redirect?referer=#{env.get("current_page")}">#{switch_instance}</a>
         </li>
         <li>
-          <a href="https://youtube.com#{env.request.resource}">#{go_to_youtube}</a>
+          <a rel="noreferrer noopener" href="https://youtube.com#{env.request.resource}">#{go_to_youtube}</a>
         </li>
       </ul>
     END_HTML

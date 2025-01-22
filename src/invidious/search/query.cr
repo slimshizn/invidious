@@ -20,6 +20,9 @@ module Invidious::Search
     property region : String?
     property channel : String = ""
 
+    # Flag that indicates if the smart search features have been disabled.
+    @inhibit_ssf : Bool = false
+
     # Return true if @raw_query is either `nil` or empty
     private def empty_raw_query?
       return @raw_query.empty?
@@ -44,14 +47,22 @@ module Invidious::Search
     def initialize(
       params : HTTP::Params,
       @type : Type = Type::Regular,
-      @region : String? = nil
+      @region : String? = nil,
     )
       # Get the raw search query string (common to all search types). In
       # Regular search mode, also look for the `search_query` URL parameter
-      if @type.regular?
-        @raw_query = params["q"]? || params["search_query"]? || ""
-      else
-        @raw_query = params["q"]? || ""
+      _raw_query = params["q"]?
+      _raw_query ||= params["search_query"]? if @type.regular?
+      _raw_query ||= ""
+
+      # Remove surrounding whitespaces. Mostly useful for copy/pasted URLs.
+      @raw_query = _raw_query.strip
+
+      # Check for smart features (ex: URL search) inhibitor (backslash).
+      # If inhibitor is present, remove it.
+      if @raw_query.starts_with?('\\')
+        @inhibit_ssf = true
+        @raw_query = @raw_query[1..]
       end
 
       # Get the page number (also common to all search types)
@@ -85,7 +96,7 @@ module Invidious::Search
           @filters = Filters.from_iv_params(params)
           @channel = params["channel"]? || ""
 
-          if @filters.default? && @raw_query.includes?(':')
+          if @filters.default? && @raw_query.index(/\w:\w/)
             # Parse legacy filters from query
             @filters, @channel, @query, subs = Filters.from_legacy_filters(@raw_query)
           else
@@ -113,7 +124,7 @@ module Invidious::Search
 
       case @type
       when .regular?, .playlist?
-        items = unnest_items(Processors.regular(self))
+        items = Processors.regular(self)
         #
       when .channel?
         items = Processors.channel(self)
@@ -137,25 +148,21 @@ module Invidious::Search
       return params
     end
 
-    # TODO: clean code
-    private def unnest_items(all_items) : Array(SearchItem)
-      items = [] of SearchItem
+    # Checks if the query is a standalone URL
+    def url? : Bool
+      # If the smart features have been inhibited, don't go further.
+      return false if @inhibit_ssf
 
-      # Light processing to flatten search results out of Categories.
-      # They should ideally be supported in the future.
-      all_items.each do |i|
-        if i.is_a? Category
-          i.contents.each do |nest_i|
-            if !nest_i.is_a? Video
-              items << nest_i
-            end
-          end
-        else
-          items << i
-        end
-      end
+      # Only supported in regular search mode
+      return false if !@type.regular?
 
-      return items
+      # If filters are present, that's a regular search
+      return false if !@filters.default?
+
+      # Simple heuristics: domain name
+      return @raw_query.starts_with?(
+        /(https?:\/\/)?(www\.)?(m\.)?youtu(\.be|be\.com)\//
+      )
     end
   end
 end

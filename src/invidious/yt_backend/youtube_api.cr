@@ -5,67 +5,178 @@
 module YoutubeAPI
   extend self
 
+  # For Android versions, see https://en.wikipedia.org/wiki/Android_version_history
+  private ANDROID_APP_VERSION = "19.32.34"
+  private ANDROID_VERSION     = "12"
+  private ANDROID_USER_AGENT  = "com.google.android.youtube/#{ANDROID_APP_VERSION} (Linux; U; Android #{ANDROID_VERSION}; US) gzip"
+  private ANDROID_SDK_VERSION = 31_i64
+
+  private ANDROID_TS_APP_VERSION = "1.9"
+  private ANDROID_TS_USER_AGENT  = "com.google.android.youtube/1.9 (Linux; U; Android 12; US) gzip"
+
+  # For Apple device names, see https://gist.github.com/adamawolf/3048717
+  # For iOS versions, see https://en.wikipedia.org/wiki/IOS_version_history#Releases,
+  # then go to the dedicated article of the major version you want.
+  private IOS_APP_VERSION = "19.32.8"
+  private IOS_USER_AGENT  = "com.google.ios.youtube/#{IOS_APP_VERSION} (iPhone14,5; U; CPU iOS 17_6 like Mac OS X;)"
+  private IOS_VERSION     = "17.6.1.21G93" # Major.Minor.Patch.Build
+
+  private WINDOWS_VERSION = "10.0"
+
   # Enumerate used to select one of the clients supported by the API
   enum ClientType
     Web
     WebEmbeddedPlayer
     WebMobile
     WebScreenEmbed
+    WebCreator
+
     Android
     AndroidEmbeddedPlayer
     AndroidScreenEmbed
+    AndroidTestSuite
+
+    IOS
+    IOSEmbedded
+    IOSMusic
+
+    TvHtml5
     TvHtml5ScreenEmbed
   end
 
   # List of hard-coded values used by the different clients
   HARDCODED_CLIENTS = {
     ClientType::Web => {
-      name:    "WEB",
-      version: "2.20210721.00.00",
-      api_key: "AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8",
-      screen:  "WATCH_FULL_SCREEN",
+      name:       "WEB",
+      name_proto: "1",
+      version:    "2.20240814.00.00",
+      screen:     "WATCH_FULL_SCREEN",
+      os_name:    "Windows",
+      os_version: WINDOWS_VERSION,
+      platform:   "DESKTOP",
     },
     ClientType::WebEmbeddedPlayer => {
-      name:    "WEB_EMBEDDED_PLAYER", # 56
-      version: "1.20210721.1.0",
-      api_key: "AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8",
-      screen:  "EMBED",
+      name:       "WEB_EMBEDDED_PLAYER",
+      name_proto: "56",
+      version:    "1.20240812.01.00",
+      screen:     "EMBED",
+      os_name:    "Windows",
+      os_version: WINDOWS_VERSION,
+      platform:   "DESKTOP",
     },
     ClientType::WebMobile => {
-      name:    "MWEB",
-      version: "2.20210726.08.00",
-      api_key: "AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8",
-      screen:  "", # None
+      name:       "MWEB",
+      name_proto: "2",
+      version:    "2.20240813.02.00",
+      os_name:    "Android",
+      os_version: ANDROID_VERSION,
+      platform:   "MOBILE",
     },
     ClientType::WebScreenEmbed => {
-      name:    "WEB",
-      version: "2.20210721.00.00",
-      api_key: "AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8",
-      screen:  "EMBED",
+      name:       "WEB",
+      name_proto: "1",
+      version:    "2.20240814.00.00",
+      screen:     "EMBED",
+      os_name:    "Windows",
+      os_version: WINDOWS_VERSION,
+      platform:   "DESKTOP",
     },
+    ClientType::WebCreator => {
+      name:       "WEB_CREATOR",
+      name_proto: "62",
+      version:    "1.20240918.03.00",
+      os_name:    "Windows",
+      os_version: WINDOWS_VERSION,
+      platform:   "DESKTOP",
+    },
+
+    # Android
+
     ClientType::Android => {
-      name:    "ANDROID",
-      version: "16.20",
-      api_key: "AIzaSyA8eiZmM1FaDVjRy-df2KTyQ_vz_yYM39w",
-      screen:  "", # ??
+      name:                "ANDROID",
+      name_proto:          "3",
+      version:             ANDROID_APP_VERSION,
+      android_sdk_version: ANDROID_SDK_VERSION,
+      user_agent:          ANDROID_USER_AGENT,
+      os_name:             "Android",
+      os_version:          ANDROID_VERSION,
+      platform:            "MOBILE",
     },
     ClientType::AndroidEmbeddedPlayer => {
-      name:    "ANDROID_EMBEDDED_PLAYER", # 55
-      version: "16.20",
-      api_key: "AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8",
-      screen:  "", # None?
+      name:       "ANDROID_EMBEDDED_PLAYER",
+      name_proto: "55",
+      version:    ANDROID_APP_VERSION,
     },
     ClientType::AndroidScreenEmbed => {
-      name:    "ANDROID", # 3
-      version: "16.20",
-      api_key: "AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8",
-      screen:  "EMBED",
+      name:                "ANDROID",
+      name_proto:          "3",
+      version:             ANDROID_APP_VERSION,
+      screen:              "EMBED",
+      android_sdk_version: ANDROID_SDK_VERSION,
+      user_agent:          ANDROID_USER_AGENT,
+      os_name:             "Android",
+      os_version:          ANDROID_VERSION,
+      platform:            "MOBILE",
+    },
+    ClientType::AndroidTestSuite => {
+      name:                "ANDROID_TESTSUITE",
+      name_proto:          "30",
+      version:             ANDROID_TS_APP_VERSION,
+      android_sdk_version: ANDROID_SDK_VERSION,
+      user_agent:          ANDROID_TS_USER_AGENT,
+      os_name:             "Android",
+      os_version:          ANDROID_VERSION,
+      platform:            "MOBILE",
+    },
+
+    # IOS
+
+    ClientType::IOS => {
+      name:         "IOS",
+      name_proto:   "5",
+      version:      IOS_APP_VERSION,
+      user_agent:   IOS_USER_AGENT,
+      device_make:  "Apple",
+      device_model: "iPhone14,5",
+      os_name:      "iPhone",
+      os_version:   IOS_VERSION,
+      platform:     "MOBILE",
+    },
+    ClientType::IOSEmbedded => {
+      name:         "IOS_MESSAGES_EXTENSION",
+      name_proto:   "66",
+      version:      IOS_APP_VERSION,
+      user_agent:   IOS_USER_AGENT,
+      device_make:  "Apple",
+      device_model: "iPhone14,5",
+      os_name:      "iPhone",
+      os_version:   IOS_VERSION,
+      platform:     "MOBILE",
+    },
+    ClientType::IOSMusic => {
+      name:         "IOS_MUSIC",
+      name_proto:   "26",
+      version:      "7.14",
+      user_agent:   "com.google.ios.youtubemusic/7.14 (iPhone14,5; U; CPU iOS 17_6 like Mac OS X;)",
+      device_make:  "Apple",
+      device_model: "iPhone14,5",
+      os_name:      "iPhone",
+      os_version:   IOS_VERSION,
+      platform:     "MOBILE",
+    },
+
+    # TV app
+
+    ClientType::TvHtml5 => {
+      name:       "TVHTML5",
+      name_proto: "7",
+      version:    "7.20240813.07.00",
     },
     ClientType::TvHtml5ScreenEmbed => {
-      name:    "TVHTML5_SIMPLY_EMBEDDED_PLAYER",
-      version: "2.0",
-      api_key: "AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8",
-      screen:  "EMBED",
+      name:       "TVHTML5_SIMPLY_EMBEDDED_PLAYER",
+      name_proto: "85",
+      version:    "2.0",
+      screen:     "EMBED",
     },
   }
 
@@ -86,10 +197,6 @@ module YoutubeAPI
   # conf_2 = ClientConfig.new(client_type: ClientType::Android)
   # YoutubeAPI::player(video_id: "dQw4w9WgXcQ", client_config: conf_2)
   #
-  # # Proxy request through russian proxies
-  # conf_3 = ClientConfig.new(proxy_region: "RU")
-  # YoutubeAPI::next({video_id: "dQw4w9WgXcQ"}, client_config: conf_3)
-  # ```
   #
   struct ClientConfig
     # Type of client to emulate.
@@ -100,16 +207,11 @@ module YoutubeAPI
     # (this is passed as the `gl` parameter).
     property region : String | Nil
 
-    # ISO code of country where the proxy is located.
-    # Used in case of geo-restricted videos.
-    property proxy_region : String | Nil
-
     # Initialization function
     def initialize(
       *,
       @client_type = ClientType::Web,
       @region = "US",
-      @proxy_region = nil
     )
     end
 
@@ -119,27 +221,53 @@ module YoutubeAPI
       HARDCODED_CLIENTS[@client_type][:name]
     end
 
+    def name_proto : String
+      HARDCODED_CLIENTS[@client_type][:name_proto]
+    end
+
     # :ditto:
     def version : String
       HARDCODED_CLIENTS[@client_type][:version]
     end
 
     # :ditto:
-    def api_key : String
-      HARDCODED_CLIENTS[@client_type][:api_key]
+    def screen : String
+      HARDCODED_CLIENTS[@client_type][:screen]? || ""
     end
 
-    # :ditto:
-    def screen : String
-      HARDCODED_CLIENTS[@client_type][:screen]
+    def android_sdk_version : Int64?
+      HARDCODED_CLIENTS[@client_type][:android_sdk_version]?
+    end
+
+    def user_agent : String?
+      HARDCODED_CLIENTS[@client_type][:user_agent]?
+    end
+
+    def os_name : String?
+      HARDCODED_CLIENTS[@client_type][:os_name]?
+    end
+
+    def device_make : String?
+      HARDCODED_CLIENTS[@client_type][:device_make]?
+    end
+
+    def device_model : String?
+      HARDCODED_CLIENTS[@client_type][:device_model]?
+    end
+
+    def os_version : String?
+      HARDCODED_CLIENTS[@client_type][:os_version]?
+    end
+
+    def platform : String?
+      HARDCODED_CLIENTS[@client_type][:platform]?
     end
 
     # Convert to string, for logging purposes
     def to_s
       return {
-        client_type:  self.name,
-        region:       @region,
-        proxy_region: @proxy_region,
+        client_type: self.name,
+        region:      @region,
       }.to_s
     end
   end
@@ -153,7 +281,7 @@ module YoutubeAPI
   # Return, as a Hash, the "context" data required to request the
   # youtube API endpoints.
   #
-  private def make_context(client_config : ClientConfig | Nil) : Hash
+  private def make_context(client_config : ClientConfig | Nil, video_id = "dQw4w9WgXcQ") : Hash
     # Use the default client config if nil is passed
     client_config ||= DEFAULT_CLIENT_CONFIG
 
@@ -163,7 +291,7 @@ module YoutubeAPI
         "gl"            => client_config.region || "US", # Can't be empty!
         "clientName"    => client_config.name,
         "clientVersion" => client_config.version,
-      },
+      } of String => String | Int64,
     }
 
     # Add some more context if it exists in the client definitions
@@ -173,8 +301,36 @@ module YoutubeAPI
 
     if client_config.screen == "EMBED"
       client_context["thirdParty"] = {
-        "embedUrl" => "https://www.youtube.com/embed/dQw4w9WgXcQ",
-      }
+        "embedUrl" => "https://www.youtube.com/embed/#{video_id}",
+      } of String => String | Int64
+    end
+
+    if android_sdk_version = client_config.android_sdk_version
+      client_context["client"]["androidSdkVersion"] = android_sdk_version
+    end
+
+    if device_make = client_config.device_make
+      client_context["client"]["deviceMake"] = device_make
+    end
+
+    if device_model = client_config.device_model
+      client_context["client"]["deviceModel"] = device_model
+    end
+
+    if os_name = client_config.os_name
+      client_context["client"]["osName"] = os_name
+    end
+
+    if os_version = client_config.os_version
+      client_context["client"]["osVersion"] = os_version
+    end
+
+    if platform = client_config.platform
+      client_context["client"]["platform"] = platform
+    end
+
+    if CONFIG.visitor_data.is_a?(String)
+      client_context["client"]["visitorData"] = CONFIG.visitor_data.as(String)
     end
 
     return client_context
@@ -214,7 +370,7 @@ module YoutubeAPI
     browse_id : String,
     *, # Force the following parameters to be passed by name
     params : String,
-    client_config : ClientConfig | Nil = nil
+    client_config : ClientConfig | Nil = nil,
   )
     # JSON Request data, required by the API
     data = {
@@ -308,12 +464,35 @@ module YoutubeAPI
     video_id : String,
     *, # Force the following parameters to be passed by name
     params : String,
-    client_config : ClientConfig | Nil = nil
+    client_config : ClientConfig | Nil = nil,
   )
+    # Playback context, separate because it can be different between clients
+    playback_ctx = {
+      "html5Preference" => "HTML5_PREF_WANTS",
+      "referer"         => "https://www.youtube.com/watch?v=#{video_id}",
+    } of String => String | Int64
+
+    if {"WEB", "TVHTML5"}.any? { |s| client_config.name.starts_with? s }
+      if sts = DECRYPT_FUNCTION.try &.get_sts
+        playback_ctx["signatureTimestamp"] = sts.to_i64
+      end
+    end
+
     # JSON Request data, required by the API
     data = {
-      "videoId" => video_id,
-      "context" => self.make_context(client_config),
+      "contentCheckOk" => true,
+      "videoId"        => video_id,
+      "context"        => self.make_context(client_config, video_id),
+      "racyCheckOk"    => true,
+      "user"           => {
+        "lockedSafetyMode" => false,
+      },
+      "playbackContext" => {
+        "contentPlaybackContext" => playback_ctx,
+      },
+      "serviceIntegrityDimensions" => {
+        "poToken" => CONFIG.po_token,
+      },
     }
 
     # Append the additional parameters if those were provided
@@ -378,7 +557,7 @@ module YoutubeAPI
   def search(
     search_query : String,
     params : String,
-    client_config : ClientConfig | Nil = nil
+    client_config : ClientConfig | Nil = nil,
   )
     # JSON Request data, required by the API
     data = {
@@ -388,6 +567,30 @@ module YoutubeAPI
     }
 
     return self._post_json("/youtubei/v1/search", data, client_config)
+  end
+
+  ####################################################################
+  # get_transcript(params, client_config?)
+  #
+  # Requests the youtubei/v1/get_transcript endpoint with the required headers
+  # and POST data in order to get a JSON reply.
+  #
+  # The requested data is a specially encoded protobuf string that denotes the specific language requested.
+  #
+  # An optional ClientConfig parameter can be passed, too (see
+  # `struct ClientConfig` above for more details).
+  #
+
+  def get_transcript(
+    params : String,
+    client_config : ClientConfig | Nil = nil,
+  ) : Hash(String, JSON::Any)
+    data = {
+      "context" => self.make_context(client_config),
+      "params"  => params,
+    }
+
+    return self._post_json("/youtubei/v1/get_transcript", data, client_config)
   end
 
   ####################################################################
@@ -402,18 +605,29 @@ module YoutubeAPI
   def _post_json(
     endpoint : String,
     data : Hash,
-    client_config : ClientConfig | Nil
+    client_config : ClientConfig | Nil,
   ) : Hash(String, JSON::Any)
     # Use the default client config if nil is passed
     client_config ||= DEFAULT_CLIENT_CONFIG
 
     # Query parameters
-    url = "#{endpoint}?key=#{client_config.api_key}&prettyPrint=false"
+    url = "#{endpoint}?prettyPrint=false"
 
     headers = HTTP::Headers{
-      "Content-Type"    => "application/json; charset=UTF-8",
-      "Accept-Encoding" => "gzip, deflate",
+      "Content-Type"              => "application/json; charset=UTF-8",
+      "Accept-Encoding"           => "gzip, deflate",
+      "x-goog-api-format-version" => "2",
+      "x-youtube-client-name"     => client_config.name_proto,
+      "x-youtube-client-version"  => client_config.version,
     }
+
+    if user_agent = client_config.user_agent
+      headers["User-Agent"] = user_agent
+    end
+
+    if CONFIG.visitor_data.is_a?(String)
+      headers["X-Goog-Visitor-Id"] = CONFIG.visitor_data.as(String)
+    end
 
     # Logging
     LOGGER.debug("YoutubeAPI: Using endpoint: \"#{endpoint}\"")
@@ -421,17 +635,14 @@ module YoutubeAPI
     LOGGER.trace("YoutubeAPI: POST data: #{data}")
 
     # Send the POST request
-    if {{ !flag?(:disable_quic) }} && CONFIG.use_quic
-      # Using QUIC client
-      body = YT_POOL.client(client_config.proxy_region,
-        &.post(url, headers: headers, body: data.to_json)
-      ).body
-    else
-      # Using HTTP client
-      body = YT_POOL.client(client_config.proxy_region) do |client|
-        client.post(url, headers: headers, body: data.to_json) do |response|
-          self._decompress(response.body_io, response.headers["Content-Encoding"]?)
+    body = YT_POOL.client() do |client|
+      client.post(url, headers: headers, body: data.to_json) do |response|
+        if response.status_code != 200
+          raise InfoException.new("Error: non 200 status code. Youtube API returned \
+            status code #{response.status_code}. See <a href=\"https://docs.invidious.io/youtube-errors-explained/\"> \
+            https://docs.invidious.io/youtube-errors-explained/</a> for troubleshooting.")
         end
+        self._decompress(response.body_io, response.headers["Content-Encoding"]?)
       end
     end
 

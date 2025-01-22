@@ -52,7 +52,7 @@ module Invidious::Database::Users
   def mark_watched(user : User, vid : String)
     request = <<-SQL
       UPDATE users
-      SET watched = array_append(watched, $1)
+      SET watched = array_append(array_remove(watched, $1), $1)
       WHERE email = $2
     SQL
 
@@ -153,6 +153,16 @@ module Invidious::Database::Users
   # -------------------
   #  Update (misc)
   # -------------------
+
+  def feed_needs_update(video : ChannelVideo)
+    request = <<-SQL
+      UPDATE users
+      SET feed_needs_update = true
+      WHERE $1 = ANY(subscriptions)
+    SQL
+
+    PG_DB.exec(request, video.ucid)
+  end
 
   def update_preferences(user : User)
     request = <<-SQL
